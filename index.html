@@ -2,53 +2,84 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>Markerless AR with &lt;model-viewer&gt;</title>
-  <!-- model-viewer 主程式 -->
-  <script type="module" 
+  <title>Markerless AR 模型檢視範例 (&lt;model-viewer&gt;)</title>
+
+  <!-- 1. 載入 model-viewer Web 組件 -->
+  <script type="module"
     src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js">
   </script>
+
   <style>
-    body, html { margin:0; height:100vh; }
-    model-viewer {
+    body, html {
+      margin: 0; padding: 0;
       width: 100%; height: 100%;
-      background: #000;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      font-family: sans-serif;
     }
-    /* 簡單按鈕 UI */
-    #downloadBtn {
-      position: absolute; bottom: 20px; left: 50%;
-      transform: translateX(-50%);
-      padding: 8px 16px; font-size: 16px;
-      background: rgba(255,255,255,0.8);
-      border: none; border-radius:4px;
+    /* 上方控制列 */
+    #controls {
+      display: flex; gap: 8px;
+      padding: 8px; background: rgba(255,255,255,0.9);
+      z-index: 10;
+    }
+    #controls > * {
+      font-size: 14px; padding: 4px 8px;
+    }
+    /* 全螢幕 model-viewer */
+    model-viewer {
+      flex: 1;
+      background: #000;
+      width: 100%; height: 100%;
+      touch-action: none;
     }
   </style>
 </head>
 <body>
-  <!-- 1. model-viewer -->
-  <model-viewer id="mv"
-    src="model.glb"            <!-- 您上傳的 .glb -->
-    ios-src="model.usdz"       <!-- 對應的 .usdz (需另外轉檔) -->
-    alt="3D 模型示範"
+
+  <!-- 2. 使用者上傳 GLB 模型 -->
+  <div id="controls">
+    <label>
+      載入 GLB 模型：
+      <input type="file" id="modelFile" accept=".glb">
+    </label>
+    <button id="enterAR" disabled>
+      點此進入 AR
+    </button>
+  </div>
+
+  <!-- 3. model-viewer 主體 -->
+  <model-viewer id="viewer"
+    alt="3D 模型預覽"
     camera-controls
     auto-rotate
     ar
-    ar-modes="quick-look"
-    style="touch-action: none;">
+    ar-modes="scene-viewer quick-look"
+    ios-src="model.usdz"               <!-- iOS Quick Look 必要 -->
+    src=""                             <!-- 由 JS 動態設定 -->
+    style="background-color: #444;">
   </model-viewer>
 
-  <!-- 2. 下載按鈕（示意：無法自動錄製 Quick Look） -->
-  <button id="downloadBtn" onclick="startScreenRecord()">
-    開啟螢幕錄影
-  </button>
-
   <script>
-    function startScreenRecord() {
-      alert(
-        '由於 iOS Quick Look 進入原生 AR，無法由網頁自動錄製。\n' +
-        '請使用 iPad 的「控制中心」→「螢幕錄影」功能，\n' +
-        '錄下 AR 互動畫面。'
-      );
-    }
+    const modelInput = document.getElementById('modelFile');
+    const enterARBtn = document.getElementById('enterAR');
+    const viewer     = document.getElementById('viewer');
+
+    // 1) 使用者選擇 GLB 檔後，動態設定 model-viewer 的 src
+    modelInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return alert('請選擇一個 .glb 檔');
+      const url = URL.createObjectURL(file);
+      viewer.src = url;
+      enterARBtn.disabled = false;
+    });
+
+    // 2) 點按後進入 AR 模式
+    enterARBtn.addEventListener('click', () => {
+      // model-viewer 會自動判斷使用 Scene Viewer (Android) 或 Quick Look (iOS)
+      viewer.enterXR();   // 進入 WebXR AR: 若不支援，會 fallback 到 Quick Look / Scene Viewer
+    });
   </script>
+
 </body>
 </html>
