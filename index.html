@@ -2,78 +2,53 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>Markerless AR with A-Frame & WebXR</title>
-  <!-- A-Frame -->
-  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
-  <!-- WebXR Hit Test Component for A-Frame -->
-  <script src="https://unpkg.com/aframe-ar-hit-test-component/dist/aframe-ar-hit-test-component.min.js"></script>
+  <title>Markerless AR with &lt;model-viewer&gt;</title>
+  <!-- model-viewer 主程式 -->
+  <script type="module" 
+    src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js">
+  </script>
   <style>
-    body, html { margin: 0; overflow: hidden; }
-    #enter-ar {
-      position: absolute; top: 10px; left: 10px;
-      padding: 8px 12px; font-size: 16px;
+    body, html { margin:0; height:100vh; }
+    model-viewer {
+      width: 100%; height: 100%;
+      background: #000;
+    }
+    /* 簡單按鈕 UI */
+    #downloadBtn {
+      position: absolute; bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 16px; font-size: 16px;
       background: rgba(255,255,255,0.8);
       border: none; border-radius:4px;
-      z-index: 2;
     }
   </style>
 </head>
 <body>
-  <button id="enter-ar">進入 AR</button>
+  <!-- 1. model-viewer -->
+  <model-viewer id="mv"
+    src="model.glb"            <!-- 您上傳的 .glb -->
+    ios-src="model.usdz"       <!-- 對應的 .usdz (需另外轉檔) -->
+    alt="3D 模型示範"
+    camera-controls
+    auto-rotate
+    ar
+    ar-modes="quick-look"
+    style="touch-action: none;">
+  </model-viewer>
 
-  <a-scene
-    vr-mode-ui="enabled: false"
-    embedded
-    webxr="optionalFeatures: hit-test; requiredFeatures: hit-test">
-
-    <!-- Hit Test Source -->
-    <a-entity webxr-hit-test="targetRayMode: screen;"></a-entity>
-
-    <!-- 預先隱藏，等放置後才顯示 -->
-    <a-entity id="model" 
-              gltf-model="model.glb"
-              scale="0.3 0.3 0.3"
-              visible="false"
-              ar-hit-test>
-    </a-entity>
-
-    <a-entity camera></a-entity>
-  </a-scene>
+  <!-- 2. 下載按鈕（示意：無法自動錄製 Quick Look） -->
+  <button id="downloadBtn" onclick="startScreenRecord()">
+    開啟螢幕錄影
+  </button>
 
   <script>
-    const enterAR = document.getElementById('enter-ar');
-    const scene   = document.querySelector('a-scene');
-    const model   = document.getElementById('model');
-    let recorder, recorded = [];
-
-    enterAR.addEventListener('click', () => {
-      scene.renderer.xr.enabled = true;
-      scene.enterVR();  // 進入 WebXR AR 模式
-    });
-
-    // 放置模型：使用 ar-hit-test 組件自動做位姿偵測
-    model.addEventListener('hit-test-select', () => {
-      model.setAttribute('visible', true);
-      // 開始錄製
-      const canvas = scene.renderer.domElement;
-      const stream = canvas.captureStream(30);
-      recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recorded = [];
-      recorder.ondataavailable = e => { if(e.data.size) recorded.push(e.data); };
-      recorder.onstop = () => {
-        const blob = new Blob(recorded, { type: 'video/webm' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url; a.download = 'ar_output.webm';
-        a.click(); URL.revokeObjectURL(url);
-      };
-      recorder.start();
-    });
-
-    // 退出 AR 時自動停止錄製
-    scene.renderer.xr.getSession()?.addEventListener('end', () => {
-      if (recorder && recorder.state === 'recording') recorder.stop();
-    });
+    function startScreenRecord() {
+      alert(
+        '由於 iOS Quick Look 進入原生 AR，無法由網頁自動錄製。\n' +
+        '請使用 iPad 的「控制中心」→「螢幕錄影」功能，\n' +
+        '錄下 AR 互動畫面。'
+      );
+    }
   </script>
 </body>
 </html>
