@@ -2,154 +2,77 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>AR 影片＋3D 模型追蹤 (自動下載版)</title>
-  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js"></script>
+  <title>Markerless AR with A-Frame & WebXR</title>
+  <!-- A-Frame -->
+  <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+  <!-- WebXR Hit Test Component for A-Frame -->
+  <script src="https://unpkg.com/aframe-ar-hit-test-component/dist/aframe-ar-hit-test-component.min.js"></script>
   <style>
-    body { margin:0; overflow:hidden; font-family: sans-serif; }
-    #controls {
-      position:absolute; top:10px; left:10px; z-index:2;
-      background: rgba(255,255,255,0.8); padding:10px; border-radius:4px;
-      display:grid; grid-template-columns: auto auto; gap:8px; align-items:center;
+    body, html { margin: 0; overflow: hidden; }
+    #enter-ar {
+      position: absolute; top: 10px; left: 10px;
+      padding: 8px 12px; font-size: 16px;
+      background: rgba(255,255,255,0.8);
+      border: none; border-radius:4px;
+      z-index: 2;
     }
-    #controls label { font-size:14px; }
-    #controls input, #controls select, #controls button {
-      font-size:14px; padding:4px 8px;
-    }
-    #videoProgress { width:200px; height:12px; }
-    #status { grid-column: 1 / span 2; font-weight:bold; }
-    video { display:none; }
   </style>
 </head>
 <body>
+  <button id="enter-ar">進入 AR</button>
 
-  <div id="controls">
-    <label>影片檔：<input type="file" id="videoInput" accept="video/*"></label>
-    <label>追蹤標記：
-      <select id="markerSelect">
-        <option value="hiro">Hiro</option>
-        <option value="kanji">Kanji</option>
-      </select>
-    </label>
-    <label>3D 模型：<input type="file" id="modelInput" accept=".gltf,.glb"></label>
-    <button id="startRec" disabled>開始錄製</button>
-    <!-- 停止按鈕可留作備用（也可以刪掉） -->
-    <button id="stopRec" disabled>停止錄製</button>
-    <progress id="videoProgress" value="0" max="1"></progress>
-    <span id="progressText">0 / 0</span>
-    <div id="status">狀態：等待上傳影片</div>
-  </div>
+  <a-scene
+    vr-mode-ui="enabled: false"
+    embedded
+    webxr="optionalFeatures: hit-test; requiredFeatures: hit-test">
 
-  <video id="video" loop muted playsinline webkit-playsinline></video>
+    <!-- Hit Test Source -->
+    <a-entity webxr-hit-test="targetRayMode: screen;"></a-entity>
 
-  <a-scene embedded
-           vr-mode-ui="enabled:false"
-           arjs="sourceType:video; videoElement:#video; debugUIEnabled:false;">
-    <a-marker id="arMarker" preset="hiro">
-      <a-entity id="model" scale="0.5 0.5 0.5"></a-entity>
-    </a-marker>
+    <!-- 預先隱藏，等放置後才顯示 -->
+    <a-entity id="model" 
+              gltf-model="model.glb"
+              scale="0.3 0.3 0.3"
+              visible="false"
+              ar-hit-test>
+    </a-entity>
+
     <a-entity camera></a-entity>
   </a-scene>
 
   <script>
-    const videoInput   = document.getElementById('videoInput');
-    const markerSelect = document.getElementById('markerSelect');
-    const modelInput   = document.getElementById('modelInput');
-    const startBtn     = document.getElementById('startRec');
-    const stopBtn      = document.getElementById('stopRec');
-    const statusEl     = document.getElementById('status');
-    const progressBar  = document.getElementById('videoProgress');
-    const progressTxt  = document.getElementById('progressText');
-    const videoEl      = document.getElementById('video');
-    const canvas       = document.querySelector('canvas');
-    let mediaRecorder, recordedChunks = [];
+    const enterAR = document.getElementById('enter-ar');
+    const scene   = document.querySelector('a-scene');
+    const model   = document.getElementById('model');
+    let recorder, recorded = [];
 
-    function setStatus(txt) {
-      statusEl.textContent = '狀態：' + txt;
-    }
-
-    // 1. 上傳並載入影片
-    videoInput.addEventListener('change', e => {
-      const f = e.target.files[0];
-      if (!f) { setStatus('尚未選影片'); return; }
-      const url = URL.createObjectURL(f);
-      videoEl.src = url;
-      videoEl.onloadedmetadata = () => {
-        videoEl.play();
-        progressBar.max = videoEl.duration;
-        progressBar.value = 0;
-        progressTxt.textContent = `0 / ${videoEl.duration.toFixed(1)}s`;
-        setStatus('影片載入完成，等待模型與標記設定');
-        startBtn.disabled = false;
-        stopBtn.disabled = false; // 停用/啟用依需求
-      };
+    enterAR.addEventListener('click', () => {
+      scene.renderer.xr.enabled = true;
+      scene.enterVR();  // 進入 WebXR AR 模式
     });
 
-    // 2. 顯示影片進度
-    videoEl.addEventListener('timeupdate', () => {
-      progressBar.value = videoEl.currentTime;
-      progressTxt.textContent = `${videoEl.currentTime.toFixed(1)} / ${videoEl.duration.toFixed(1)}s`;
-    });
-
-    // 3. 影片結束時自動停止錄製並下載
-    videoEl.addEventListener('ended', () => {
-      setStatus('影片播放結束，錄製自動停止並下載');
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-      }
-    });
-
-    // 4. 切換標記
-    markerSelect.addEventListener('change', e => {
-      document.getElementById('arMarker').setAttribute('preset', e.target.value);
-      setStatus(`已切換標記：${e.target.value}`);
-    });
-
-    // 5. 匯入模型
-    modelInput.addEventListener('change', e => {
-      const f = e.target.files[0];
-      if (!f) { setStatus('尚未選模型'); return; }
-      const url = URL.createObjectURL(f);
-      const modelEnt = document.querySelector('#model');
-      modelEnt.setAttribute('gltf-model', url);
-      setStatus('模型載入中…');
-      modelEnt.addEventListener('model-loaded', () => {
-        setStatus('模型載入完成，準備開始錄製');
-      }, { once: true });
-    });
-
-    // 6. 開始錄製
-    startBtn.addEventListener('click', () => {
-      if (!canvas) { alert('無法取得 AR 畫布'); return; }
-      recordedChunks = [];
+    // 放置模型：使用 ar-hit-test 組件自動做位姿偵測
+    model.addEventListener('hit-test-select', () => {
+      model.setAttribute('visible', true);
+      // 開始錄製
+      const canvas = scene.renderer.domElement;
       const stream = canvas.captureStream(30);
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
+      recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      recorded = [];
+      recorder.ondataavailable = e => { if(e.data.size) recorded.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(recorded, { type: 'video/webm' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url; a.download = 'ar_output.webm';
+        a.click(); URL.revokeObjectURL(url);
       };
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const dlUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = dlUrl;
-        a.download = 'ar_output.webm';
-        document.body.appendChild(a);
-        a.click();
-        URL.revokeObjectURL(dlUrl);
-        setStatus('錄製完成，檔案已下載');
-        startBtn.disabled = false;
-      };
-      mediaRecorder.start();
-      setStatus('錄製中…影片結束時自動停止');
-      startBtn.disabled = true;
+      recorder.start();
     });
 
-    // 7. 停止錄製（備用）
-    stopBtn.addEventListener('click', () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-      }
+    // 退出 AR 時自動停止錄製
+    scene.renderer.xr.getSession()?.addEventListener('end', () => {
+      if (recorder && recorder.state === 'recording') recorder.stop();
     });
   </script>
 </body>
