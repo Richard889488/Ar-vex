@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>上傳影片 + AR 3D 模型匯入</title>
+  <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js"></script>
+  <style>
+    body { margin:0; overflow:hidden; }
+    #controls {
+      position:absolute; top:10px; left:10px; z-index:2;
+      display:flex; gap:8px;
+    }
+    #controls>* { padding:6px 12px; font-size:14px; }
+    video { display:none; }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <input type="file" id="videoInput" accept="video/*">
+    <select id="markerSelect">
+      <option value="hiro">Hiro（預設）</option>
+      <option value="kanji">Kanji</option>
+    </select>
+    <input type="file" id="modelInput" accept=".gltf,.glb">
+    <button id="startRec">開始錄製</button>
+    <button id="stopRec">停止錄製</button>
+  </div>
+
+  <video id="video" loop muted playsinline webkit-playsinline></video>
+
+  <a-scene embedded
+           vr-mode-ui="enabled:false"
+           arjs="sourceType:video; videoElement:#video; debugUIEnabled:false;">
+    <a-marker id="arMarker" preset="hiro">
+      <a-entity id="model" scale="0.5 0.5 0.5"></a-entity>
+    </a-marker>
+    <a-entity camera></a-entity>
+  </a-scene>
+
+  <script>
+    const videoInput = document.getElementById('videoInput'),
+          videoEl    = document.getElementById('video'),
+          markerSel  = document.getElementById('markerSelect'),
+          modelInput = document.getElementById('modelInput'),
+          startBtn   = document.getElementById('startRec'),
+          stopBtn    = document.getElementById('stopRec'),
+          canvas     = document.querySelector('canvas');
+    let mediaRecorder, recordedChunks = [];
+
+    // 影片上傳
+    videoInput.addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      videoEl.src = URL.createObjectURL(f);
+      videoEl.onloadedmetadata = () => videoEl.play();
+    });
+
+    // 標記選擇
+    markerSel.addEventListener('change', e => {
+      document.getElementById('arMarker')
+              .setAttribute('preset', e.target.value);
+    });
+
+    // 3D 模型匯入
+    modelInput.addEventListener('change', e => {
+      const f = e.target.files[0]; if (!f) return;
+      document.querySelector('#model')
+              .setAttribute('gltf-model', URL.createObjectURL(f));
+    });
+
+    // 開始錄製
+    startBtn.addEventListener('click', () => {
+      if (!canvas) return alert('未取得畫布');
+      const stream = canvas.captureStream(30);
+      mediaRecorder = new MediaRecorder(stream, { mimeType:'video/webm' });
+      recordedChunks = [];
+      mediaRecorder.ondataavailable = evt => {
+        if (evt.data.size>0) recordedChunks.push(evt.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, {type:'video/webm'});
+        const url  = URL.createObjectURL(blob),
+              a    = document.createElement('a');
+        a.style.display='none'; a.href=url; a.download='ar_output.webm';
+        document.body.appendChild(a); a.click();
+        URL.revokeObjectURL(url);
+      };
+      mediaRecorder.start();
+    });
+
+    // 停止錄製
+    stopBtn.addEventListener('click', () => {
+      if (mediaRecorder && mediaRecorder.state!=='inactive')
+        mediaRecorder.stop();
+    });
+  </script>
+</body>
+</html>
