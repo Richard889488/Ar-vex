@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>AR 影片＋3D 模型追蹤 (進度顯示版)</title>
+  <title>AR 影片＋3D 模型追蹤 (自動下載版)</title>
   <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.3.2/aframe/build/aframe-ar.js"></script>
   <style>
@@ -18,7 +18,7 @@
     }
     #videoProgress { width:200px; height:12px; }
     #status { grid-column: 1 / span 2; font-weight:bold; }
-    video { display:none; } /* 隱藏原始影片元素 */
+    video { display:none; }
   </style>
 </head>
 <body>
@@ -33,6 +33,7 @@
     </label>
     <label>3D 模型：<input type="file" id="modelInput" accept=".gltf,.glb"></label>
     <button id="startRec" disabled>開始錄製</button>
+    <!-- 停止按鈕可留作備用（也可以刪掉） -->
     <button id="stopRec" disabled>停止錄製</button>
     <progress id="videoProgress" value="0" max="1"></progress>
     <span id="progressText">0 / 0</span>
@@ -63,12 +64,11 @@
     const canvas       = document.querySelector('canvas');
     let mediaRecorder, recordedChunks = [];
 
-    // 更新狀態
     function setStatus(txt) {
       statusEl.textContent = '狀態：' + txt;
     }
 
-    // 1. 處理影片上傳
+    // 1. 上傳並載入影片
     videoInput.addEventListener('change', e => {
       const f = e.target.files[0];
       if (!f) { setStatus('尚未選影片'); return; }
@@ -81,28 +81,31 @@
         progressTxt.textContent = `0 / ${videoEl.duration.toFixed(1)}s`;
         setStatus('影片載入完成，等待模型與標記設定');
         startBtn.disabled = false;
-      };
-      videoEl.onended = () => {
-        setStatus('影片播放結束，錄製自動停止');
-        if (mediaRecorder && mediaRecorder.state==='recording') {
-          mediaRecorder.stop();
-        }
+        stopBtn.disabled = false; // 停用/啟用依需求
       };
     });
 
-    // 2. 監聽影片進度更新
+    // 2. 顯示影片進度
     videoEl.addEventListener('timeupdate', () => {
       progressBar.value = videoEl.currentTime;
       progressTxt.textContent = `${videoEl.currentTime.toFixed(1)} / ${videoEl.duration.toFixed(1)}s`;
     });
 
-    // 3. 切換 AR 追蹤標記
+    // 3. 影片結束時自動停止錄製並下載
+    videoEl.addEventListener('ended', () => {
+      setStatus('影片播放結束，錄製自動停止並下載');
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+    });
+
+    // 4. 切換標記
     markerSelect.addEventListener('change', e => {
       document.getElementById('arMarker').setAttribute('preset', e.target.value);
       setStatus(`已切換標記：${e.target.value}`);
     });
 
-    // 4. 匯入自訂 3D 模型
+    // 5. 匯入模型
     modelInput.addEventListener('change', e => {
       const f = e.target.files[0];
       if (!f) { setStatus('尚未選模型'); return; }
@@ -115,40 +118,36 @@
       }, { once: true });
     });
 
-    // 5. 開始錄製
+    // 6. 開始錄製
     startBtn.addEventListener('click', () => {
       if (!canvas) { alert('無法取得 AR 畫布'); return; }
       recordedChunks = [];
       const stream = canvas.captureStream(30);
-      mediaRecorder = new MediaRecorder(stream, { mimeType:'video/webm' });
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       mediaRecorder.ondataavailable = e => {
-        if (e.data.size>0) recordedChunks.push(e.data);
+        if (e.data.size > 0) recordedChunks.push(e.data);
       };
       mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type:'video/webm' });
-        const downloadUrl = URL.createObjectURL(blob);
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const dlUrl = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
-        a.href = downloadUrl;
+        a.href = dlUrl;
         a.download = 'ar_output.webm';
         document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(downloadUrl);
+        URL.revokeObjectURL(dlUrl);
         setStatus('錄製完成，檔案已下載');
         startBtn.disabled = false;
-        stopBtn.disabled = true;
       };
       mediaRecorder.start();
-      setStatus('錄製中…');
+      setStatus('錄製中…影片結束時自動停止');
       startBtn.disabled = true;
-      stopBtn.disabled = false;
-      // 從影片當前時間開始播放（若尚未播放）
-      if (videoEl.paused) videoEl.play();
     });
 
-    // 6. 停止錄製
+    // 7. 停止錄製（備用）
     stopBtn.addEventListener('click', () => {
-      if (mediaRecorder && mediaRecorder.state==='recording') {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
       }
     });
