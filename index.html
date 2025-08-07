@@ -1,85 +1,251 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>Markerless AR 模型檢視範例 (&lt;model-viewer&gt;)</title>
-
-  <!-- 1. 載入 model-viewer Web 組件 -->
-  <script type="module"
-    src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js">
-  </script>
-
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web 編輯模式 Demo (iPad 支援)</title>
   <style>
-    body, html {
+    html, body {
       margin: 0; padding: 0;
       width: 100%; height: 100%;
-      overflow: hidden;
-      display: flex; flex-direction: column;
-      font-family: sans-serif;
+      overflow: hidden; touch-action: none;
     }
-    /* 上方控制列 */
-    #controls {
-      display: flex; gap: 8px;
-      padding: 8px; background: rgba(255,255,255,0.9);
-      z-index: 10;
-    }
-    #controls > * {
-      font-size: 14px; padding: 4px 8px;
-    }
-    /* 全螢幕 model-viewer */
-    model-viewer {
-      flex: 1;
-      background: #000;
+    /* 絕對定位並佔滿螢幕 */
+    canvas#canvas {
+      position: absolute;
+      top: 0; left: 0;
       width: 100%; height: 100%;
-      touch-action: none;
+      display: block;
+      z-index: 1;
+    }
+    /* UI 按鈕要在最上層 */
+    #ui {
+      position: absolute;
+      top: 10px; left: 10px;
+      background: rgba(255,255,255,0.85);
+      padding: 8px; border-radius: 4px;
+      font-family: sans-serif;
+      z-index: 2;
+    }
+    #ui select, #ui button {
+      margin: 4px 2px; font-size: 14px;
     }
   </style>
+
+  <!-- Three.js UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/TransformControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/modifiers/SubdivisionModifier.js"></script>
 </head>
 <body>
+  <!-- 顯式宣告 Canvas -->
+  <canvas id="canvas"></canvas>
 
-  <!-- 2. 使用者上傳 GLB 模型 -->
-  <div id="controls">
-    <label>
-      載入 GLB 模型：
-      <input type="file" id="modelFile" accept=".glb">
+  <!-- 操作 UI -->
+  <div id="ui">
+    <label>選擇類型：
+      <select id="selectMode">
+        <option value="vertex">頂點</option>
+        <option value="edge">邊</option>
+        <option value="face" selected>面</option>
+      </select>
     </label>
-    <button id="enterAR" disabled>
-      點此進入 AR
-    </button>
+    <label>Transform：
+      <select id="transformMode">
+        <option value="translate" selected>移動</option>
+        <option value="rotate">旋轉</option>
+        <option value="scale">縮放</option>
+      </select>
+    </label>
+    <button id="extrudeBtn">擠出</button>
+    <button id="subdivideBtn">細分</button>
+    <button id="deleteBtn">刪除面</button>
   </div>
 
-  <!-- 3. model-viewer 主體 -->
-  <model-viewer id="viewer"
-    alt="3D 模型預覽"
-    camera-controls
-    auto-rotate
-    ar
-    ar-modes="scene-viewer quick-look"
-    ios-src="model.usdz"               <!-- iOS Quick Look 必要 -->
-    src=""                             <!-- 由 JS 動態設定 -->
-    style="background-color: #444;">
-  </model-viewer>
-
   <script>
-    const modelInput = document.getElementById('modelFile');
-    const enterARBtn = document.getElementById('enterAR');
-    const viewer     = document.getElementById('viewer');
+    window.onload = function() {
+      // 1. Renderer with existing <canvas>
+      const canvas   = document.getElementById('canvas');
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.domElement.style.touchAction = 'none';
 
-    // 1) 使用者選擇 GLB 檔後，動態設定 model-viewer 的 src
-    modelInput.addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (!file) return alert('請選擇一個 .glb 檔');
-      const url = URL.createObjectURL(file);
-      viewer.src = url;
-      enterARBtn.disabled = false;
-    });
+      // 2. Scene & Camera
+      const scene    = new THREE.Scene();
+      scene.background = new THREE.Color(0xf0f0f0);
+      const camera   = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+      camera.position.set(3, 3, 3);
 
-    // 2) 點按後進入 AR 模式
-    enterARBtn.addEventListener('click', () => {
-      // model-viewer 會自動判斷使用 Scene Viewer (Android) 或 Quick Look (iOS)
-      viewer.enterXR();   // 進入 WebXR AR: 若不支援，會 fallback 到 Quick Look / Scene Viewer
-    });
+      // 3. Controls
+      const orbit    = new THREE.OrbitControls(camera, canvas);
+      orbit.update();
+      const transform = new THREE.TransformControls(camera, canvas);
+      scene.add(transform);
+
+      // 4. A simple box mesh
+      const geom     = new THREE.BoxGeometry(1,1,1);
+      const mat      = new THREE.MeshStandardMaterial({
+        color: 0x0088ff, flatShading: true, side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      scene.add(mesh);
+
+      // 5. Lights
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      dirLight.position.set(5, 10, 7.5);
+      scene.add(dirLight);
+
+      // 6. Raycaster setup
+      const raycaster = new THREE.Raycaster();
+      const pointer   = new THREE.Vector2();
+      let selectionType = 'face', selected = null, vertexHelper = null;
+
+      // 7. UI events
+      document.getElementById('selectMode')
+              .addEventListener('change', e => { selectionType = e.target.value; clearSelection(); });
+      document.getElementById('transformMode')
+              .addEventListener('change', e => transform.setMode(e.target.value));
+      document.getElementById('extrudeBtn').addEventListener('click', extrudeFace);
+      document.getElementById('subdivideBtn').addEventListener('click', subdivideGlobal);
+      document.getElementById('deleteBtn').addEventListener('click', deleteSelectedFace);
+
+      canvas.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('resize', onWindowResize);
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth/window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function onPointerDown(evt) {
+        pointer.x = (evt.clientX / window.innerWidth) * 2 - 1;
+        pointer.y = -(evt.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+
+        const hits = raycaster.intersectObject(mesh, false);
+        if (!hits.length) return;
+        const hit = hits[0];
+        clearSelection();
+
+        if (selectionType === 'face') {
+          selected = { type:'face', face:hit.face, faceIndex:hit.faceIndex };
+          mesh.material.color.set(0xff8844);
+
+        } else if (selectionType === 'vertex') {
+          const idx = hit.face.a;
+          selected = { type:'vertex', index:idx };
+          highlightVertex(idx);
+
+        } else if (selectionType === 'edge') {
+          selected = { type:'edge', v1:hit.face.a, v2:hit.face.b };
+          mesh.material.color.set(0x44ff44);
+        }
+
+        if (selected.type === 'vertex') setupVertexTransform();
+        else transform.attach(mesh);
+      }
+
+      function clearSelection() {
+        selected = null;
+        transform.detach();
+        mesh.material.color.set(0x0088ff);
+        if (vertexHelper) {
+          scene.remove(vertexHelper);
+          vertexHelper = null;
+        }
+      }
+
+      function highlightVertex(idx) {
+        const pos = mesh.geometry.attributes.position;
+        const v   = new THREE.Vector3().fromBufferAttribute(pos, idx);
+        vertexHelper = new THREE.Mesh(
+          new THREE.SphereGeometry(0.03, 8, 8),
+          new THREE.MeshBasicMaterial({ color:0xff0000 })
+        );
+        vertexHelper.position.copy(v);
+        scene.add(vertexHelper);
+      }
+
+      function setupVertexTransform() {
+        const pos   = mesh.geometry.attributes.position;
+        const idx   = selected.index;
+        const orig  = new THREE.Vector3().fromBufferAttribute(pos, idx);
+        const helper= new THREE.Object3D();
+        helper.position.copy(orig);
+        scene.add(helper);
+        transform.attach(helper);
+
+        transform.addEventListener('mouseUp', () => {
+          const p = helper.position;
+          pos.setXYZ(idx, p.x, p.y, p.z);
+          pos.needsUpdate = true;
+          scene.remove(helper);
+          clearSelection();
+        }, { once: true });
+      }
+
+      function extrudeFace() {
+        if (!selected || selected.type!=='face') return;
+        const g    = mesh.geometry;
+        const posA = g.attributes.position;
+        const idxA = g.index.array;
+        const f    = selected.face;
+        const n    = f.normal.clone().multiplyScalar(0.2);
+
+        const va = new THREE.Vector3().fromBufferAttribute(posA, f.a);
+        const vb = new THREE.Vector3().fromBufferAttribute(posA, f.b);
+        const vc = new THREE.Vector3().fromBufferAttribute(posA, f.c);
+
+        const oldPos = Array.from(posA.array);
+        oldPos.push(va.x+n.x, va.y+n.y, va.z+n.z);
+        oldPos.push(vb.x+n.x, vb.y+n.y, vb.z+n.z);
+        oldPos.push(vc.x+n.x, vc.y+n.y, vc.z+n.z);
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(oldPos), 3));
+
+        const newIdx = Array.from(idxA);
+        const base   = (oldPos.length/3) - 3;
+        newIdx.push(base, base+1, base+2);
+        newIdx.push(f.a, f.b, base+1, f.a, base+1, base);
+        newIdx.push(f.b, f.c, base+2, f.b, base+2, base+1);
+        newIdx.push(f.c, f.a, base,    f.c, base,    base+2);
+        g.setIndex(newIdx);
+
+        g.attributes.position.needsUpdate = true;
+        g.index.needsUpdate = true;
+        g.computeVertexNormals();
+        clearSelection();
+      }
+
+      function subdivideGlobal() {
+        const mod = new THREE.SubdivisionModifier(1);
+        let geo   = new THREE.Geometry().fromBufferGeometry(mesh.geometry);
+        mod.modify(geo);
+        mesh.geometry = new THREE.BufferGeometry().fromGeometry(geo);
+      }
+
+      function deleteSelectedFace() {
+        if (!selected || selected.type!=='face') return;
+        const g      = mesh.geometry;
+        const idxArr = Array.from(g.index.array);
+        const keep   = [];
+        idxArr.forEach((v,i) => {
+          if (Math.floor(i/3) !== selected.faceIndex) keep.push(v);
+        });
+        g.setIndex(keep);
+        g.index.needsUpdate = true;
+        g.computeVertexNormals();
+        clearSelection();
+      }
+
+      // 8. 主迴圈
+      (function animate(){
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      })();
+    };
   </script>
-
 </body>
 </html>
